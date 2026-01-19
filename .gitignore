@@ -1,0 +1,48 @@
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# Docker volumes (created at runtime)
+n8n_data/
+postgres_data/
+qdrant_data/
+redis_data/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if running scripts locally)
+node_modules/
+
+# Python virtual environments
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Backup files
+*.bak
+*.backup
