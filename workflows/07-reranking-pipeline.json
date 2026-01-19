@@ -1,0 +1,224 @@
+{
+  "name": "Lab 3.3 - Reranking Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "chat-trigger",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "lab-3-3-chat"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve",
+        "qdrantCollection": {
+          "__rl": true,
+          "mode": "list",
+          "value": "lab_documents"
+        },
+        "topK": 10,
+        "options": {}
+      },
+      "id": "qdrant-retrieve",
+      "name": "Initial Retrieval",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "qdrantApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Qdrant Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "embeddings",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $('Chat Trigger').first().json.chatInput;\nconst documents = $input.all().map((item, index) => ({\n  index: index,\n  content: item.json.document?.pageContent || '',\n  metadata: item.json.document?.metadata || {},\n  initialScore: item.json.score || 0\n}));\n\n// Prepare reranking prompt\nconst rerankPrompt = `You are a relevance scoring system. Rate each document's relevance to the query on a scale of 0-10.\n\nQuery: \"${query}\"\n\nDocuments to score:\n${documents.map((d, i) => `[${i}] ${d.content.substring(0, 300)}...`).join('\\n\\n')}\n\nRespond with ONLY a JSON array of integer scores (0-10) in the same order as the documents. Example: [8, 3, 9, 2, 5, 1, 7, 4, 6, 0]`;\n\nreturn [{\n  json: {\n    query,\n    documents,\n    rerankPrompt,\n    documentCount: documents.length\n  }\n}];"
+      },
+      "id": "prepare-rerank",
+      "name": "Prepare Reranking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.rerankPrompt }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "rerank-llm",
+      "name": "Rerank with LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [850, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const prevData = $('Prepare Reranking').first().json;\nconst llmResponse = $input.first().json;\n\n// Parse scores from LLM response\nlet scores;\ntry {\n  const responseText = llmResponse.message?.content || llmResponse.text || '[]';\n  scores = JSON.parse(responseText.replace(/```json?|```/g, '').trim());\n} catch (e) {\n  // Fallback to initial scores if parsing fails\n  scores = prevData.documents.map(d => d.initialScore * 10);\n}\n\n// Combine and sort by rerank score\nconst reranked = prevData.documents\n  .map((doc, i) => ({\n    ...doc,\n    rerankScore: scores[i] || 0,\n    scoreChange: (scores[i] || 0) - (doc.initialScore * 10)\n  }))\n  .sort((a, b) => b.rerankScore - a.rerankScore)\n  .slice(0, 3);  // Keep top 3\n\nreturn [{\n  json: {\n    query: prevData.query,\n    rerankedDocuments: reranked,\n    topDocumentsContext: reranked.map(d => d.content).join('\\n\\n---\\n\\n')\n  }\n}];"
+      },
+      "id": "process-rerank",
+      "name": "Process Reranked Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "final-llm",
+      "name": "Generate Response",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1250, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "prompt": "Based on the following context, answer the user's question.\n\nContext:\n{{ $json.topDocumentsContext }}\n\nQuestion: {{ $json.query }}\n\nProvide a helpful, accurate response based only on the context provided. If the context doesn't contain enough information, say so.",
+        "options": {}
+      },
+      "id": "final-chain",
+      "name": "Final Response Chain",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Initial Retrieval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Initial Retrieval",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initial Retrieval": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reranking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reranking": {
+      "main": [
+        [
+          {
+            "node": "Rerank with LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rerank with LLM": {
+      "main": [
+        [
+          {
+            "node": "Process Reranked Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Reranked Results": {
+      "main": [
+        [
+          {
+            "node": "Final Response Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Final Response Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "AI Agents Lab"
+    }
+  ],
+  "meta": {
+    "templateId": "lab-3-3"
+  }
+}

@@ -1,0 +1,188 @@
+{
+  "name": "Lab 4.1 - Grounded Agent with Citations",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "chat-trigger",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "lab-4-1-chat"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve",
+        "qdrantCollection": {
+          "__rl": true,
+          "mode": "list",
+          "value": "lab_documents"
+        },
+        "topK": 5,
+        "options": {}
+      },
+      "id": "qdrant-retrieve",
+      "name": "Retrieve Context",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "qdrantApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Qdrant Local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "embeddings",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $('Chat Trigger').first().json.chatInput;\nconst retrievedDocs = $input.all();\n\n// Format each document with a citation ID\nconst formattedContext = retrievedDocs.map((doc, index) => {\n  const content = doc.json.document?.pageContent || '';\n  const source = doc.json.document?.metadata?.source || 'Unknown';\n  const score = doc.json.score?.toFixed(3) || 'N/A';\n  \n  return `[SOURCE ${index + 1}] (Relevance: ${score})\nFile: ${source}\nContent: ${content}\n---`;\n}).join('\\n\\n');\n\nconst sources = retrievedDocs.map((doc, index) => ({\n  id: index + 1,\n  source: doc.json.document?.metadata?.source || 'Unknown',\n  score: doc.json.score\n}));\n\nreturn [{\n  json: {\n    query,\n    formattedContext,\n    sources,\n    sourceCount: retrievedDocs.length\n  }\n}];"
+      },
+      "id": "format-context",
+      "name": "Format Context with Sources",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "openai-model",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [850, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a helpful assistant that ONLY provides information from the given sources.\n\nCRITICAL RULES:\n1. ONLY answer based on the provided SOURCE documents\n2. ALWAYS cite sources using [SOURCE X] format\n3. If information is not in the sources, say \"I don't have information about this in my knowledge base\"\n4. NEVER make up information or extrapolate beyond what sources state\n5. If sources conflict, mention both views with their citations\n6. Rate your confidence: HIGH (directly stated), MEDIUM (implied), LOW (uncertain)\n\nCONTEXT FROM KNOWLEDGE BASE:\n{{ $json.formattedContext }}\n\nUSER QUESTION: {{ $json.query }}\n\nRemember: No citation = No claim. Every factual statement needs a [SOURCE X] reference."
+        }
+      },
+      "id": "grounded-agent",
+      "name": "Grounded Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json.output || '';\nconst sourceCount = $('Format Context with Sources').first().json.sourceCount;\n\n// Extract cited sources\nconst citedSources = [...response.matchAll(/\\[SOURCE (\\d+)\\]/g)]\n  .map(m => parseInt(m[1]));\n\n// Check for invalid citations\nconst invalidCitations = citedSources.filter(s => s > sourceCount);\n\n// Check for uncited claims (basic heuristic)\nconst sentences = response.split(/[.!?]+/).filter(s => s.trim());\nconst citedSentences = sentences.filter(s => /\\[SOURCE \\d+\\]/.test(s));\nconst citationRate = sentences.length > 0 ? citedSentences.length / sentences.length : 0;\n\nreturn [{\n  json: {\n    response,\n    validation: {\n      citedSources: [...new Set(citedSources)],\n      invalidCitations,\n      citationRate: (citationRate * 100).toFixed(1) + '%',\n      totalSentences: sentences.length,\n      citedSentences: citedSentences.length\n    },\n    qualityFlags: {\n      hasInvalidCitations: invalidCitations.length > 0,\n      lowCitationRate: citationRate < 0.5,\n      noSourcesUsed: citedSources.length === 0\n    }\n  }\n}];"
+      },
+      "id": "validate-citations",
+      "name": "Validate Citations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Retrieve Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Retrieve Context",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Context": {
+      "main": [
+        [
+          {
+            "node": "Format Context with Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Context with Sources": {
+      "main": [
+        [
+          {
+            "node": "Grounded Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Grounded Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grounded Agent": {
+      "main": [
+        [
+          {
+            "node": "Validate Citations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "AI Agents Lab"
+    }
+  ],
+  "meta": {
+    "templateId": "lab-4-1"
+  }
+}
