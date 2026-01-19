@@ -161,19 +161,11 @@ Expected output:
 
 ## Importing Lab Workflows
 
-### Method 1: Manual Import
+### Method: Manual Import
 
 1. In n8n, click **Add Workflow** → **Import from File**
 2. Select a JSON file from the `/workflows` directory
 3. Review and save the workflow
-
-### Method 2: Bulk Import Script
-
-```bash
-./scripts/import-workflows.sh
-```
-
-This imports all lab workflows with appropriate naming.
 
 ---
 
