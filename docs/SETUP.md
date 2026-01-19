@@ -77,6 +77,7 @@ POSTGRES_PASSWORD=changeme_in_production
 
 ### Generate Secure Keys
 
+**macOS / Linux:**
 ```bash
 # Generate encryption key
 openssl rand -hex 16
@@ -84,6 +85,23 @@ openssl rand -hex 16
 # Generate JWT secret  
 openssl rand -hex 32
 ```
+
+**Windows (PowerShell):**
+```powershell
+# Generate encryption key (32 characters)
+-join ((48..57) + (97..102) | Get-Random -Count 32 | % {[char]$_})
+
+# Generate JWT secret (64 characters)
+-join ((48..57) + (97..102) | Get-Random -Count 64 | % {[char]$_})
+```
+
+**Any platform (Python):**
+```bash
+python -c "import secrets; print(secrets.token_hex(16))"
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+**Or use an online generator:** Search "random hex string generator" and generate 32 characters for the encryption key and 64 for the JWT secret.
 
 ---
 
