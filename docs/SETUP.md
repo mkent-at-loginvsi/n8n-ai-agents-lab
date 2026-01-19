@@ -57,7 +57,7 @@ cd n8n-ai-agents-lab
 
 ```bash
 # Copy the template
-cp .env.example .env
+cp env.example .env
 ```
 
 Edit `.env` with your preferred editor:
