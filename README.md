@@ -105,7 +105,7 @@ n8n-ai-agents-lab/
 
 ```bash
 # 1. Clone this repository
-git clone https://github.com/your-org/n8n-ai-agents-lab.git
+git clone https://github.com/n8n-ai-agents-lab/n8n-ai-agents-lab.git
 cd n8n-ai-agents-lab
 
 # 2. Copy and configure environment
