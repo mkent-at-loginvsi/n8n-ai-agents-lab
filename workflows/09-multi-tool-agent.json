@@ -1,10 +1,8 @@
 {
-  "name": "Lab 4.2 - Multi-Tool Production Agent",
+  "name": "Lab 4.2 - Multi-Tool Agent",
   "nodes": [
     {
-      "parameters": {
-        "options": {}
-      },
+      "parameters": {},
       "id": "chat-trigger",
       "name": "Chat Trigger",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
@@ -14,165 +12,15 @@
     },
     {
       "parameters": {
-        "model": "gpt-4o",
         "options": {
-          "temperature": 0.3
+          "systemMessage": "You are a helpful assistant with multiple capabilities:\n\n1. KNOWLEDGE BASE: Search for information about DataSync Pro\n2. CALCULATOR: Perform mathematical calculations\n3. CODE: Execute JavaScript code for complex operations\n\nRULES:\n- For product questions, ALWAYS search the knowledge base first\n- For math questions, use the calculator\n- For complex calculations or data processing, use code execution\n- Cite sources when using knowledge base information\n- If you cannot find information, say so clearly"
         }
       },
-      "id": "openai-model",
-      "name": "OpenAI Chat Model",
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-      "typeVersion": 1,
-      "position": [450, 600],
-      "credentials": {
-        "openAiApi": {
-          "id": "CREDENTIAL_ID",
-          "name": "OpenAI"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "options": {
-          "systemMessage": "You are a production-grade assistant with multiple capabilities.\n\nAVAILABLE TOOLS:\n- knowledge_search: Search internal documentation (USE FIRST for factual questions about products/features)\n- calculator: Perform mathematical calculations\n- code_executor: Run JavaScript code for data processing\n\nDECISION FRAMEWORK:\n1. For internal/product questions → knowledge_search FIRST\n2. For calculations → calculator\n3. For data transformation → code_executor\n4. For general knowledge → answer directly (with caveats)\n\nERROR HANDLING:\n- If a tool fails, explain the issue and try an alternative approach\n- If you're uncertain, state your confidence level\n- If you can't complete a task, explain what you would need\n\nRESPONSE FORMAT:\n- Be concise but complete\n- Cite sources when using knowledge_search\n- Show your work for calculations\n- Explain your tool selection reasoning briefly",
-          "maxIterations": 10
-        }
-      },
-      "id": "multi-tool-agent",
-      "name": "Multi-Tool Agent",
+      "id": "ai-agent",
+      "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.6,
-      "position": [450, 300]
-    },
-    {
-      "parameters": {
-        "name": "knowledge_search",
-        "description": "Search internal documentation and knowledge base for information about products, features, troubleshooting, pricing, and technical details. Always use this tool first when answering questions about the product.",
-        "topK": 3
-      },
-      "id": "vector-store-tool",
-      "name": "Knowledge Search Tool",
-      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
-      "typeVersion": 1,
-      "position": [650, 500]
-    },
-    {
-      "parameters": {
-        "mode": "retrieve",
-        "qdrantCollection": {
-          "__rl": true,
-          "mode": "list",
-          "value": "lab_documents"
-        },
-        "options": {}
-      },
-      "id": "qdrant-retrieve",
-      "name": "Qdrant Vector Store",
-      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
-      "typeVersion": 1,
-      "position": [850, 500],
-      "credentials": {
-        "qdrantApi": {
-          "id": "CREDENTIAL_ID",
-          "name": "Qdrant Local"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "model": "text-embedding-3-small",
-        "options": {}
-      },
-      "id": "embeddings",
-      "name": "Embeddings OpenAI",
-      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
-      "typeVersion": 1,
-      "position": [850, 600],
-      "credentials": {
-        "openAiApi": {
-          "id": "CREDENTIAL_ID",
-          "name": "OpenAI"
-        }
-      }
-    },
-    {
-      "parameters": {},
-      "id": "calculator",
-      "name": "Calculator",
-      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
-      "typeVersion": 1,
-      "position": [650, 700]
-    },
-    {
-      "parameters": {
-        "name": "code_executor",
-        "description": "Execute JavaScript code for data manipulation, parsing, transformation, or processing. Use this for tasks that require programmatic logic, string manipulation, array operations, or data formatting.",
-        "language": "javaScript"
-      },
-      "id": "code-tool",
-      "name": "Code Executor",
-      "type": "@n8n/n8n-nodes-langchain.toolCode",
-      "typeVersion": 1,
-      "position": [650, 800]
-    },
-    {
-      "parameters": {
-        "jsCode": "const agentOutput = $input.first();\n\nconst output = agentOutput.json.output || '';\nconst hasError = agentOutput.json.error || \n                 output.toLowerCase().includes('error occurred') ||\n                 output.toLowerCase().includes('failed to');\n\n// Extract tool usage from intermediate steps\nconst intermediateSteps = agentOutput.json.intermediateSteps || [];\nconst toolsUsed = intermediateSteps.map(s => s.action?.tool).filter(Boolean);\n\n// Log execution metadata\nconst executionMeta = {\n  timestamp: new Date().toISOString(),\n  toolsUsed: toolsUsed,\n  uniqueTools: [...new Set(toolsUsed)],\n  iterationCount: intermediateSteps.length,\n  hasError,\n  responseLength: output.length\n};\n\n// Quality checks\nconst qualityChecks = {\n  tooShort: output.length < 50 && !hasError,\n  tooLong: output.length > 4000,\n  noToolUsed: toolsUsed.length === 0,\n  excessiveIterations: intermediateSteps.length > 5\n};\n\nreturn [{\n  json: {\n    output,\n    executionMeta,\n    qualityChecks,\n    warnings: Object.entries(qualityChecks)\n      .filter(([_, v]) => v)\n      .map(([k]) => k)\n  }\n}];"
-      },
-      "id": "error-handler",
-      "name": "Error Handler & Metrics",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "has-warnings",
-              "leftValue": "={{ $json.warnings.length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "or"
-        },
-        "options": {}
-      },
-      "id": "check-quality",
-      "name": "Quality Check",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [850, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $input.first().json;\n\n// Log warning but still return response\nconsole.log('Quality warnings:', data.warnings);\n\nreturn [{\n  json: {\n    response: data.output,\n    warnings: data.warnings,\n    note: 'Response generated with quality warnings. Review recommended.'\n  }\n}];"
-      },
-      "id": "handle-warnings",
-      "name": "Handle Warnings",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1050, 200]
-    },
-    {
-      "parameters": {
-        "jsCode": "const data = $input.first().json;\n\nreturn [{\n  json: {\n    response: data.output,\n    metrics: data.executionMeta\n  }\n}];"
-      },
-      "id": "success-output",
-      "name": "Success Output",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1050, 400]
+      "typeVersion": 1.7,
+      "position": [500, 300]
     }
   ],
   "connections": {
@@ -180,113 +28,7 @@
       "main": [
         [
           {
-            "node": "Multi-Tool Agent",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenAI Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "Multi-Tool Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Knowledge Search Tool": {
-      "ai_tool": [
-        [
-          {
-            "node": "Multi-Tool Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Qdrant Vector Store": {
-      "ai_vectorStore": [
-        [
-          {
-            "node": "Knowledge Search Tool",
-            "type": "ai_vectorStore",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Embeddings OpenAI": {
-      "ai_embedding": [
-        [
-          {
-            "node": "Qdrant Vector Store",
-            "type": "ai_embedding",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Calculator": {
-      "ai_tool": [
-        [
-          {
-            "node": "Multi-Tool Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code Executor": {
-      "ai_tool": [
-        [
-          {
-            "node": "Multi-Tool Agent",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Multi-Tool Agent": {
-      "main": [
-        [
-          {
-            "node": "Error Handler & Metrics",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Error Handler & Metrics": {
-      "main": [
-        [
-          {
-            "node": "Quality Check",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Quality Check": {
-      "main": [
-        [
-          {
-            "node": "Handle Warnings",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Success Output",
+            "node": "AI Agent",
             "type": "main",
             "index": 0
           }
@@ -298,13 +40,15 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "staticData": null,
+  "meta": {
+    "notes": "IMPORTANT: After importing this workflow, you must manually add sub-nodes:\n\n1. Click AI Agent → Add 'OpenAI Chat Model' to the Model connector → Set your OpenAI credential\n\n2. Click AI Agent → Add 'Vector Store Tool' to Tool connector → Configure with Qdrant + Embeddings sub-nodes\n\n3. Click AI Agent → Add 'Calculator' to Tool connector (no config needed)\n\n4. Click AI Agent → Add 'Code Tool' to Tool connector → Set language: JavaScript\n\nSee MODULE-04-advanced-agents.md for detailed instructions."
+  },
   "tags": [
     {
       "name": "AI Agents Lab"
+    },
+    {
+      "name": "Module 4"
     }
-  ],
-  "meta": {
-    "templateId": "lab-4-2"
-  }
+  ]
 }

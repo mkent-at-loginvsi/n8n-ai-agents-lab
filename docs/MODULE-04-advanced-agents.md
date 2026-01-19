@@ -1,521 +1,462 @@
-# Module 4: Advanced Agents & Reliability
+# Module 4: Production Patterns & Reliability
 
 **Duration:** 30 minutes  
-**Prerequisites:** Completed Modules 1-3
+**Prerequisites:** Completed Modules 1-3, documents ingested into Qdrant
 
 ---
 
 ## 🎯 Learning Objectives
 
-- Understand types and causes of LLM hallucinations
-- Implement grounding strategies with citations
-- Build robust multi-tool production agents
-- Apply error handling and reliability patterns
+- Understand types of AI hallucinations
+- Build grounded agents that cite sources
+- Implement output validation
+- Create production-ready multi-tool agents
 
 ---
 
-## Lecture: Hallucinations - Detection & Mitigation
-
-### What are Hallucinations?
-
-LLM hallucinations are confident-sounding outputs that are factually incorrect, fabricated, or inconsistent.
-
-```
-User: "Who wrote the novel 'The Azure Protocols'?"
-
-Hallucinated Response:
-"The Azure Protocols was written by Margaret Chen in 1987. 
-It won the National Book Award and has sold over 2 million copies."
-
-Reality: This book doesn't exist. The LLM invented everything.
-```
+## Lecture: Hallucinations & Mitigation
 
 ### Types of Hallucinations
 
-| Type            | Example                               | Cause                                |
-|-----------------|---------------------------------------|--------------------------------------|
-| **Factual**     | Incorrect dates, names, statistics    | Training data errors, interpolation  |
-| **Fabrication** | Made-up citations, fake quotes        | Pattern completion without grounding |
-| **Logical**     | Self-contradicting statements         | Context window limitations           |
-| **Conflation**  | Mixing details from different sources | Embedding space proximity            |
+| Type | Description | Example |
+|------|-------------|---------|
+| **Factual** | Wrong facts stated confidently | "The Eiffel Tower is 500m tall" (actually 330m) |
+| **Fabrication** | Inventing sources/quotes | "According to your docs..." (docs never say this) |
+| **Conflation** | Mixing up distinct information | Combining features from Product A and B |
+| **Logical** | Flawed reasoning | Invalid logical deductions |
 
-### Why Do LLMs Hallucinate?
+### Defense in Depth
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Causes of Hallucination                    │
+│                    Mitigation Layers                         │
 ├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  1. Pattern Completion Pressure                             │
-│     LLMs are trained to generate plausible text.            │
-│     When uncertain, they generate plausible-sounding        │
-│     content rather than admitting uncertainty.              │
-│                                                             │
-│  2. Knowledge Boundaries                                    │
-│     No clear signal when information is outside             │
-│     training data. Model can't distinguish "I know"         │
-│     from "I can generate something that sounds right."      │
-│                                                             │
-│  3. Context Window Confusion                                │
-│     In long conversations, earlier context may be           │
-│     misremembered or conflated with other information.      │
-│                                                             │
-│  4. Statistical Interpolation                               │
-│     Training creates probability distributions.             │
-│     Low-probability but coherent outputs can emerge.        │
-│                                                             │
+│                                                              │
+│   Layer 1: Model Selection                                   │
+│   └── Use capable models (GPT-4o, Claude 3.5)               │
+│                                                              │
+│   Layer 2: Prompt Engineering                                │
+│   └── Clear instructions, require citations                  │
+│                                                              │
+│   Layer 3: RAG Grounding                                     │
+│   └── Provide factual context from your data                │
+│                                                              │
+│   Layer 4: Output Validation                                 │
+│   └── Check responses before returning to user              │
+│                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Mitigation Strategies
+### The Grounding Prompt
+
+This system prompt forces the agent to cite sources and admit uncertainty:
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│               Hallucination Mitigation Stack               │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  Layer 4: Output Validation                                │
-│  ──────────────────────────                                │
-│  • Fact-checking against sources                           │
-│  • Citation verification                                   │
-│  • Consistency checks                                      │
-│                                                            │
-│  Layer 3: Retrieval Augmentation (RAG)                     │
-│  ──────────────────────────────────────                    │
-│  • Ground responses in retrieved facts                     │
-│  • Provide source context                                  │
-│  • Limit generation to known information                   │
-│                                                            │
-│  Layer 2: Prompt Engineering                               │
-│  ──────────────────────────                                │
-│  • "Only answer from provided context"                     │
-│  • "Say 'I don't know' if uncertain"                       │
-│  • Request confidence levels                               │
-│                                                            │
-│  Layer 1: Model Selection                                  │
-│  ────────────────────────                                  │
-│  • Larger models hallucinate less                          │
-│  • Lower temperature reduces fabrication                   │
-│  • Some models better calibrated                           │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+You are a helpful assistant with access to a knowledge base.
+
+CRITICAL RULES:
+1. ALWAYS search the knowledge base before answering
+2. ONLY answer based on information found in the knowledge base
+3. CITE your sources: mention which document the info came from
+4. If the knowledge base doesn't have the answer, say: "I don't have information about that in my knowledge base."
+5. NEVER make up information not explicitly stated in retrieved documents
+6. Do NOT ask clarifying questions - search first, then answer
 ```
-
-### Grounding Techniques
-
-| Technique                   | How It Works                    | Effectiveness |
-|-----------------------------|---------------------------------|---------------|
-| **RAG**                     | Provide source documents        | High          |
-| **Citations Required**      | Force source attribution        | Medium-High   |
-| **Confidence Scores**       | Request uncertainty estimates   | Medium        |
-| **Multi-step Verification** | Cross-check with separate calls | High (costly) |
-| **Constrained Generation**  | Limit output to known entities  | Very High     |
 
 ---
 
 ## Lab 4.1: Grounded Agent with Citations
 
-**Goal:** Build an agent that always cites its sources and acknowledges uncertainty.
+**Goal:** Build an agent that only answers from retrieved context and cites sources.
 
-### Step 1: Create Workflow
+> **Note:** Build this workflow from scratch - it's more reliable than importing in n8n 2.3+
 
-1. Create new workflow: `Lab 4.1 - Grounded Agent`
-2. Add **Chat Trigger**
+### Step 1: Create New Workflow
 
-### Step 2: Configure Retrieval
+1. Click **Add Workflow** (or press `Ctrl/Cmd + N`)
+2. Name it `Lab 4.1 - Grounded Agent`
+3. Click **Save**
 
-1. Add **Qdrant Vector Store** node
-2. Configure for retrieval:
-   - **Collection:** `lab_documents`
-   - **Top K:** `5`
-   - **Include Metadata:** Yes
+### Step 2: Add Chat Trigger
 
-### Step 3: Format Context with Sources
+1. Click **+** to add a node
+2. Search for **Chat Trigger**
+3. Add it to the canvas
+4. No configuration needed (defaults work)
 
-Add **Code** node to prepare grounded context:
+### Step 3: Add AI Agent
 
-```javascript
-const query = $('Chat Trigger').first().json.chatInput;
-const retrievedDocs = $input.all();
-
-// Format each document with a citation ID
-const formattedContext = retrievedDocs.map((doc, index) => {
-  const content = doc.json.document.pageContent;
-  const source = doc.json.document.metadata?.source || 'Unknown';
-  const score = doc.json.score?.toFixed(3) || 'N/A';
-  
-  return `[SOURCE ${index + 1}] (Relevance: ${score})
-File: ${source}
-Content: ${content}
----`;
-}).join('\n\n');
-
-const sources = retrievedDocs.map((doc, index) => ({
-  id: index + 1,
-  source: doc.json.document.metadata?.source || 'Unknown',
-  score: doc.json.score
-}));
-
-return [{
-  json: {
-    query,
-    formattedContext,
-    sources,
-    sourceCount: retrievedDocs.length
-  }
-}];
-```
-
-### Step 4: Configure Grounded Agent
-
-1. Add **AI Agent** node
-2. Configure with grounding system prompt:
+1. Click **+** → Search for **AI Agent**
+2. Add it to the canvas
+3. **Connect** Chat Trigger → AI Agent (drag from right dot to left dot)
+4. Click on the **AI Agent** node to configure:
+   - Find **System Message** (may be under Options or Prompt)
+   - Enter the grounding prompt:
 
 ```
-You are a helpful assistant that ONLY provides information from the given sources.
+You are a helpful assistant with access to a knowledge base about DataSync Pro.
 
 CRITICAL RULES:
-1. ONLY answer based on the provided SOURCE documents
-2. ALWAYS cite sources using [SOURCE X] format
-3. If information is not in the sources, say "I don't have information about this in my knowledge base"
-4. NEVER make up information or extrapolate beyond what sources state
-5. If sources conflict, mention both views with their citations
-6. Rate your confidence: HIGH (directly stated), MEDIUM (implied), LOW (uncertain)
-
-CONTEXT FROM KNOWLEDGE BASE:
-{{ $json.formattedContext }}
-
-USER QUESTION: {{ $json.query }}
-
-Remember: No citation = No claim. Every factual statement needs a [SOURCE X] reference.
+1. ALWAYS search the knowledge base before answering ANY question
+2. ONLY answer based on information found in the knowledge base
+3. CITE your sources by saying "According to [document name]..."
+4. If the knowledge base doesn't have the answer, say: "I don't have information about that in my knowledge base."
+5. NEVER make up information not explicitly stated in retrieved documents
+6. Do NOT ask clarifying questions - search first, then answer based on what you find
 ```
 
-### Step 5: Test Grounding
+### Step 4: Add Model Sub-Node (Required)
 
-Test with these scenarios:
+1. With AI Agent selected, look at the **bottom of the node**
+2. Find the **Model** connector (shows a ⚠️ if not connected)
+3. Click the **+** button on the Model connector
+4. Search for **OpenAI Chat Model**
+5. Select it - it will attach as a sub-node below the AI Agent
+6. Click on the **OpenAI Chat Model** sub-node to configure:
+   - **Credential to connect with:** Select your OpenAI credential
+   - **Model:** `gpt-4o`
+   - Under Options: **Temperature:** `0.2` (lower = more consistent)
 
-**Test 1 - Answerable:**
+### Step 5: Add Tool Sub-Node
+
+1. Click back on the **AI Agent** node (the main one, not the model)
+2. Find the **Tool** connector at the bottom
+3. Click **+** → Search for **Vector Store Tool**
+4. Select it - it attaches as a sub-node
+5. Click on **Vector Store Tool** to configure:
+   - **Name:** `knowledge_search`
+   - **Description:** `Search the knowledge base for information about DataSync Pro, including features, pricing, installation, and troubleshooting.`
+
+### Step 6: Add Vector Store Sub-Node
+
+1. Click on the **Vector Store Tool** node (the sub-node you just added)
+2. Find the **Vector Store** connector at the bottom
+3. Click **+** → Search for **Qdrant Vector Store**
+4. Select it
+5. Click on **Qdrant Vector Store** to configure:
+   - **Credential to connect with:** Select your Qdrant credential
+   - **Operation/Mode:** Retrieve (or Get Many)
+   - **Collection Name:** `lab_documents`
+   - **Top K / Limit:** `4`
+
+### Step 7: Add Embeddings Sub-Node (Required for Vector Store)
+
+1. Click on the **Qdrant Vector Store** node
+2. Find the **Embedding** connector at the bottom (shows ⚠️ if not connected)
+3. Click **+** → Search for **Embeddings OpenAI**
+4. Select it
+5. Click on **Embeddings OpenAI** to configure:
+   - **Credential to connect with:** Select your OpenAI credential
+   - **Model:** `text-embedding-3-small`
+
+### Visual Check - Final Structure
+
+Your workflow should look like this:
+
 ```
-"What features does the product have?"
+┌──────────────┐      ┌──────────────┐
+│ Chat Trigger │─────→│   AI Agent   │
+└──────────────┘      └──────┬───────┘
+                             │
+                    ┌────────┴────────┐
+                    ↓                 ↓
+            ┌──────────────┐  ┌──────────────┐
+            │ OpenAI Chat  │  │ Vector Store │
+            │    Model     │  │     Tool     │
+            └──────────────┘  └──────┬───────┘
+                                     │
+                                     ↓
+                             ┌──────────────┐
+                             │    Qdrant    │
+                             │ Vector Store │
+                             └──────┬───────┘
+                                    │
+                                    ↓
+                             ┌──────────────┐
+                             │  Embeddings  │
+                             │   OpenAI     │
+                             └──────────────┘
 ```
-Expected: Answer with [SOURCE X] citations
 
-**Test 2 - Not in sources:**
+The sub-nodes hang below their parent nodes visually.
+
+### Step 8: Save and Test
+
+1. Click **Save** (top right)
+2. Open the **Chat** panel:
+   - Look for a speech bubble icon in the bottom right
+   - Or click the "Test Chat" button if visible
+3. Test with these questions:
+
+**Should answer (info is in knowledge base):**
 ```
-"What is the CEO's favorite color?"
+What are the main features of DataSync Pro?
 ```
-Expected: "I don't have information about this in my knowledge base"
-
-**Test 3 - Partial information:**
 ```
-"Compare all pricing tiers in detail"
+How much does the Professional plan cost?
 ```
-Expected: Answer what's available, note what's missing
-
-### 💡 Citation Verification
-
-Add a validation node to check citations are valid:
-
-```javascript
-const response = $input.first().json.output;
-const sourceCount = $('Code').first().json.sourceCount;
-
-// Extract cited sources
-const citedSources = [...response.matchAll(/\[SOURCE (\d+)\]/g)]
-  .map(m => parseInt(m[1]));
-
-// Check for invalid citations
-const invalidCitations = citedSources.filter(s => s > sourceCount);
-
-// Check for uncited claims (basic heuristic)
-const sentences = response.split(/[.!?]+/).filter(s => s.trim());
-const citedSentences = sentences.filter(s => /\[SOURCE \d+\]/.test(s));
-const citationRate = citedSentences.length / sentences.length;
-
-return [{
-  json: {
-    response,
-    citedSources: [...new Set(citedSources)],
-    invalidCitations,
-    citationRate: (citationRate * 100).toFixed(1) + '%',
-    qualityFlags: {
-      hasInvalidCitations: invalidCitations.length > 0,
-      lowCitationRate: citationRate < 0.5
-    }
-  }
-}];
 ```
+What are the system requirements?
+```
+
+**Should decline (info is NOT in knowledge base):**
+```
+What color is the DataSync Pro logo?
+```
+```
+Who is the CEO of DataSync Pro?
+```
+
+### Expected Behavior
+
+✅ **Good response:**
+> According to the product manual, DataSync Pro offers real-time bidirectional sync, intelligent conflict resolution, and end-to-end encryption. The Professional plan costs $999/month and includes up to 50 users.
+
+✅ **Good decline:**
+> I don't have information about the logo color in my knowledge base.
+
+❌ **Bad response (hallucination):**
+> The DataSync Pro logo is blue and white. (Made up!)
 
 ---
 
-## Lab 4.2: Multi-Tool Production Agent
+## Lab 4.2: Multi-Tool Agent
 
-**Goal:** Build a robust agent with multiple tools and error handling.
+**Goal:** Build an agent with multiple tools that can answer different types of questions.
 
-### Step 1: Create Workflow
+### Step 1: Create New Workflow
 
-1. Create new workflow: `Lab 4.2 - Multi-Tool Agent`
-2. Add **Chat Trigger**
+1. Click **Add Workflow** → Name it `Lab 4.2 - Multi-Tool Agent`
+2. Click **Save**
 
-### Step 2: Configure Production Agent
+### Step 2: Add Chat Trigger + AI Agent
 
-1. Add **AI Agent** node
-2. System prompt for multi-tool orchestration:
-
-```
-You are a production-grade assistant with multiple capabilities.
-
-AVAILABLE TOOLS:
-- knowledge_search: Search internal documentation (USE FIRST for factual questions)
-- calculator: Perform mathematical calculations
-- code_executor: Run JavaScript code for data processing
-- web_search: Search the internet for current information (use sparingly)
-
-DECISION FRAMEWORK:
-1. For internal/product questions → knowledge_search FIRST
-2. For calculations → calculator
-3. For data transformation → code_executor  
-4. For current events/external info → web_search
-5. For general knowledge → answer directly (with caveats)
-
-ERROR HANDLING:
-- If a tool fails, explain the issue and try an alternative approach
-- If you're uncertain, state your confidence level
-- If you can't complete a task, explain what you would need
-
-RESPONSE FORMAT:
-- Be concise but complete
-- Cite sources when using knowledge_search
-- Show your work for calculations
-- Explain your tool selection reasoning briefly
-```
-
-### Step 3: Add Tools
-
-Add these tools to the agent:
-
-**1. Knowledge Search Tool**
-- Vector Store Tool connected to Qdrant
-- Description: `Search internal documentation and knowledge base`
-
-**2. Calculator Tool**
-- Built-in Calculator
-- Description: `Perform mathematical calculations`
-
-**3. Code Tool**
-- Code Tool (JavaScript)
-- Description: `Execute JavaScript for data processing, parsing, or transformation`
-
-**4. HTTP Request Tool (Optional)**
-- For external API calls
-- Description: `Make HTTP requests to external services`
-
-### Step 4: Add Error Handling Wrapper
-
-Add **Code** node before output for error handling:
-
-```javascript
-const agentOutput = $input.first();
-
-// Check for error indicators
-const output = agentOutput.json.output || '';
-const hasError = agentOutput.json.error || 
-                 output.toLowerCase().includes('error') ||
-                 output.toLowerCase().includes('failed');
-
-// Log execution metadata
-const executionMeta = {
-  timestamp: new Date().toISOString(),
-  toolsUsed: agentOutput.json.intermediateSteps?.map(s => s.action?.tool) || [],
-  iterationCount: agentOutput.json.intermediateSteps?.length || 0,
-  hasError,
-  responseLength: output.length
-};
-
-// Quality checks
-const qualityChecks = {
-  tooShort: output.length < 50,
-  tooLong: output.length > 4000,
-  noToolUsed: executionMeta.toolsUsed.length === 0,
-  excessiveIterations: executionMeta.iterationCount > 5
-};
-
-return [{
-  json: {
-    output,
-    executionMeta,
-    qualityChecks,
-    warnings: Object.entries(qualityChecks)
-      .filter(([_, v]) => v)
-      .map(([k]) => k)
-  }
-}];
-```
-
-### Step 5: Add Fallback Logic
-
-Add **IF** node to handle failures:
-
-```javascript
-// Check if we should use fallback
-const hasWarnings = $input.first().json.warnings.length > 0;
-const hasError = $input.first().json.executionMeta.hasError;
-
-return hasError || hasWarnings;
-```
-
-**True branch:** Send to a simpler agent or return error message
-**False branch:** Return successful response
-
-### Step 6: Test Multi-Tool Scenarios
+1. Add **Chat Trigger** node
+2. Add **AI Agent** node
+3. Connect Chat Trigger → AI Agent
+4. Configure AI Agent system message:
 
 ```
-Test 1: "What's 15% of the base price mentioned in the documentation?"
-→ Should use: knowledge_search, then calculator
+You are a helpful assistant with multiple capabilities:
 
-Test 2: "Parse this JSON and extract all email addresses: {data...}"
-→ Should use: code_executor
+1. KNOWLEDGE BASE: Search for information about DataSync Pro
+2. CALCULATOR: Perform mathematical calculations
+3. CODE: Execute JavaScript code for complex operations
 
-Test 3: "What does our documentation say about API rate limits?"
-→ Should use: knowledge_search only
-
-Test 4: "What's the current Bitcoin price?"
-→ Should use: web_search (if available) or acknowledge limitation
+RULES:
+- For product questions, ALWAYS search the knowledge base first
+- For math questions, use the calculator
+- For complex calculations or data processing, use code execution
+- Cite sources when using knowledge base information
+- If you cannot find information, say so clearly
 ```
 
----
+### Step 3: Add Model Sub-Node
 
-## Production Patterns
+1. Click **+** on AI Agent's **Model** connector
+2. Add **OpenAI Chat Model**
+3. Configure:
+   - **Credential:** Your OpenAI credential
+   - **Model:** `gpt-4o`
 
-### 1. Retry with Exponential Backoff
+### Step 4: Add Vector Store Tool (First Tool)
 
-```javascript
-async function retryWithBackoff(fn, maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await sleep(Math.pow(2, i) * 1000);
-    }
-  }
-}
+1. Click **+** on AI Agent's **Tool** connector
+2. Add **Vector Store Tool**
+3. Configure:
+   - **Name:** `knowledge_search`
+   - **Description:** `Search the knowledge base for DataSync Pro information`
+4. Click on Vector Store Tool, then add **Qdrant Vector Store** sub-node:
+   - **Credential:** Your Qdrant credential
+   - **Collection:** `lab_documents`
+5. Click on Qdrant, then add **Embeddings OpenAI** sub-node:
+   - **Credential:** Your OpenAI credential
+
+### Step 5: Add Calculator Tool (Second Tool)
+
+1. Click back on the **AI Agent** node
+2. Click **+** on the **Tool** connector again
+3. Search for **Calculator**
+4. Add it - no configuration needed
+
+### Step 6: Add Code Tool (Third Tool)
+
+1. Click back on the **AI Agent** node
+2. Click **+** on the **Tool** connector again
+3. Search for **Code Tool**
+4. Add it
+5. Configure:
+   - **Language:** `JavaScript`
+
+### Final Structure
+
+```
+┌──────────────┐      ┌──────────────┐
+│ Chat Trigger │─────→│   AI Agent   │
+└──────────────┘      └──────┬───────┘
+                             │
+        ┌───────────┬────────┼────────┬───────────┐
+        ↓           ↓        ↓        ↓           ↓
+   ┌─────────┐ ┌─────────┐ ┌──────┐ ┌──────┐ ┌─────────┐
+   │ OpenAI  │ │ Vector  │ │Qdrant│ │Calc- │ │  Code   │
+   │  Chat   │ │ Store   │ │  +   │ │ulator│ │  Tool   │
+   │  Model  │ │  Tool   │ │Embed │ │      │ │         │
+   └─────────┘ └─────────┘ └──────┘ └──────┘ └─────────┘
 ```
 
-### 2. Circuit Breaker Pattern
+### Step 7: Save and Test
 
-```javascript
-const circuitBreaker = {
-  failures: 0,
-  lastFailure: null,
-  threshold: 5,
-  resetTimeout: 60000,
-  
-  async execute(fn) {
-    if (this.isOpen()) {
-      throw new Error('Circuit breaker is open');
-    }
-    try {
-      const result = await fn();
-      this.reset();
-      return result;
-    } catch (error) {
-      this.recordFailure();
-      throw error;
-    }
-  },
-  
-  isOpen() {
-    if (this.failures >= this.threshold) {
-      const timeSinceFailure = Date.now() - this.lastFailure;
-      return timeSinceFailure < this.resetTimeout;
-    }
-    return false;
-  }
-};
+Test with different types of questions:
+
+**Knowledge base query:**
+```
+What encryption does DataSync Pro use?
 ```
 
-### 3. Response Validation
+**Calculator query:**
+```
+If the Professional plan is $999/month, how much is that per year?
+```
 
-```javascript
-function validateResponse(response, schema) {
-  const checks = {
-    hasContent: response.length > 0,
-    notTooLong: response.length < 10000,
-    noErrorIndicators: !/(error|failed|exception)/i.test(response),
-    hasCitations: /\[SOURCE \d+\]/.test(response),
-    isComplete: !response.endsWith('...')
-  };
-  
-  return {
-    isValid: Object.values(checks).every(v => v),
-    checks
-  };
-}
+**Code query:**
+```
+Generate a random 16-character password using letters and numbers
+```
+
+**Combined query:**
+```
+The Starter plan is $299/month. If I have a team of 8 and we upgrade to Professional at $999/month, what's the annual difference in cost?
 ```
 
 ---
 
 ## Exercises
 
-### Exercise 4.1: Confidence Calibration
+### Exercise 4.1: Add Response Validation
 
-Modify the grounded agent to:
-1. Add confidence scores to each claim
-2. Track calibration over multiple queries
-3. Identify when the agent is overconfident
+Add a Code node after the AI Agent to validate responses:
 
-### Exercise 4.2: Agent Observability
+1. Disconnect the AI Agent from any final output
+2. Add a **Code** node
+3. Connect AI Agent → Code
+4. Add this validation code:
 
-Create a dashboard workflow that:
-1. Logs all agent executions to a database
-2. Tracks tool usage patterns
-3. Monitors error rates
-4. Alerts on anomalies
+```javascript
+const response = $input.first().json.output;
+
+// Validation checks
+const checks = {
+  hasContent: response && response.length > 0,
+  notTooLong: response.length < 2000,
+  noErrorPhrases: !response.toLowerCase().includes('error'),
+  hasCitation: response.includes('according to') || 
+               response.includes('based on') ||
+               response.includes("don't have information")
+};
+
+const isValid = Object.values(checks).every(v => v);
+
+return [{
+  json: {
+    response,
+    validation: checks,
+    isValid
+  }
+}];
+```
+
+### Exercise 4.2: Custom Tool
+
+Create a tool that fetches current date/time:
+
+1. Add **Code Tool** to the AI Agent
+2. In the tool's code, return current date:
+
+```javascript
+return {
+  currentDate: new Date().toISOString(),
+  formatted: new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+};
+```
 
 ---
 
-## Common Issues
+## Troubleshooting
 
-| Issue                   | Solution                                       |
-|-------------------------|------------------------------------------------|
-| Agent ignores sources   | Strengthen grounding prompt, lower temperature |
-| Too many iterations     | Set max iterations, improve tool descriptions  |
-| Invalid citations       | Add citation validation, post-process output   |
-| Inconsistent formatting | Use structured output or JSON mode             |
+| Issue | Solution |
+|-------|----------|
+| "Model sub-node must be connected" | Click AI Agent → Click **+** on Model connector → Add OpenAI Chat Model |
+| "Embedding must be connected" | Click Qdrant node → Click **+** on Embedding connector → Add Embeddings OpenAI |
+| "Credential not found" | Click node → Select credential from dropdown → Save |
+| "Collection not found" | Run Lab 3.1 first to ingest documents, or check collection name spelling |
+| Agent doesn't search | Make system prompt more explicit about searching FIRST |
+| No citations in response | Add to prompt: "You MUST cite by saying 'According to [source]...'" |
+| Slow responses | Use `gpt-4o-mini` instead, reduce Top K to 3 |
+| Chat panel won't open | Make sure workflow is saved, try refreshing the page |
+
+---
+
+## Common n8n 2.3+ Patterns
+
+### Sub-Node Connection Pattern
+
+Sub-nodes connect at the **bottom** of parent nodes:
+
+```
+Parent Node
+     │
+     ↓ (click + on connector)
+Sub-Node
+```
+
+### Required Sub-Nodes
+
+| Parent Node | Required Sub-Nodes |
+|-------------|-------------------|
+| AI Agent | Model (always required) |
+| Vector Store Tool | Vector Store |
+| Qdrant Vector Store | Embedding |
+
+### Credential Checklist
+
+Every node that calls an external service needs credentials:
+
+- [ ] OpenAI Chat Model → OpenAI credential
+- [ ] Embeddings OpenAI → OpenAI credential  
+- [ ] Qdrant Vector Store → Qdrant credential
 
 ---
 
 ## Key Takeaways
 
-1. **Hallucinations are inherent** to LLMs - mitigate, don't eliminate
-2. **Grounding with RAG** significantly reduces fabrication
-3. **Citations create accountability** and verifiability
-4. **Multi-tool agents** need clear tool selection guidance
-5. **Production agents** require error handling and observability
+1. **Grounding prevents hallucinations** - Force agents to use retrieved context
+2. **Require citations** - Makes it easy to verify responses
+3. **Admit uncertainty** - Better to say "I don't know" than hallucinate
+4. **Multiple tools** - Give agents the right tool for each job
+5. **Validate outputs** - Check responses before returning to users
+6. **Sub-nodes are key** - In n8n 2.3+, AI nodes use sub-node connections
 
 ---
 
-## Workshop Summary
+## Workshop Complete! 🎉
 
-Congratulations! You've completed the AI Agents Lab. You can now:
+You've learned:
+- ✅ Chains vs Agents
+- ✅ Memory management  
+- ✅ RAG and vector search
+- ✅ Reranking for quality
+- ✅ Grounding and citations
+- ✅ Multi-tool agents
 
-✅ Build AI Chains and Agents in n8n
-✅ Implement conversation memory
-✅ Create RAG pipelines with reranking
-✅ Mitigate hallucinations with grounding
-✅ Build production-ready multi-tool agents
+**Next steps:**
+1. Add your own documents to the knowledge base
+2. Create custom tools for your use case
+3. Deploy n8n for production use
+4. Explore more n8n AI nodes
 
-### Next Steps
-
-1. **Experiment:** Modify the lab workflows for your use cases
-2. **Scale:** Add more documents to your knowledge base
-3. **Monitor:** Implement logging and observability
-4. **Iterate:** Continuously improve prompts based on results
-
-### Resources
-
-- [n8n AI Documentation](https://docs.n8n.io/ai/)
-- [Qdrant Documentation](https://qdrant.tech/documentation/)
-- [OpenAI Cookbook](https://cookbook.openai.com/)
-- [LangChain Concepts](https://docs.langchain.com/docs/)
+Remember to run `docker compose down` when you're finished!

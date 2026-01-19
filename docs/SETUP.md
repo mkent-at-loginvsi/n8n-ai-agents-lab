@@ -103,6 +103,9 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 **Or use an online generator:** Search "random hex string generator" and generate 32 characters for the encryption key and 64 for the JWT secret.
 
+**Or download windows version of openssl:**
+https://slproweb.com/products/Win32OpenSSL.html
+
 ---
 
 ## Step 4: Start the Stack
